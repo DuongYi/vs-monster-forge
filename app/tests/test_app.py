@@ -272,3 +272,40 @@ def test_live_progress_and_preview_during_generation(env):
     final = next(x for x in jobs if x["id"] == job["id"])
     assert final["status"] == "done" and final["progress"]["variant"] == 2 and final["progress"]["phase"] == "Xong"
     c.call("GET", "/api/jobs/000000000000/preview", expect=400)
+
+
+def test_auto_detect_other_local_port(env):
+    c, app, fc, _ = env
+    dead = "http://127.0.0.1:9"
+    app.comfy_candidates = [dead, fc.url]          # giả lập: cổng đang đặt (8188) không có, cổng kia (8000) có
+    app.settings.update({"comfy_url": dead})
+    st = c.call("GET", "/api/status?refresh=1")
+    assert st["doctor"]["connected"] and st["doctor"]["auto_url"] == fc.url
+    assert st["settings"]["comfy_url"] == fc.url
+    # địa chỉ người dùng tự đặt (không thuộc danh sách tự dò) thì không bị đổi
+    app.settings.update({"comfy_url": "http://127.0.0.1:10"})
+    st = c.call("GET", "/api/status?refresh=1")
+    assert st["doctor"]["connected"] is False and st["settings"]["comfy_url"] == "http://127.0.0.1:10"
+
+
+def test_transparent_ref_is_flattened_on_key_color_for_ai(env):
+    c, app, fc, _ = env
+    c.call("POST", "/api/monsters", {"monster_id": "mob_t", "preset": "mob_thuong"})
+    rgba = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
+    rgba.paste((150, 90, 50, 255), (30, 30, 66, 80))
+    buf = io.BytesIO()
+    rgba.save(buf, "PNG")
+    c.call("POST", "/api/monsters/mob_t/ref?name=r.png", raw=buf.getvalue())
+    for color in ([0, 255, 0], [255, 0, 255]):
+        spec = c.call("GET", "/api/monsters/mob_t")["spec"]
+        spec["background"] = {"mode": "key", "color": color}
+        c.call("PUT", "/api/monsters/mob_t/spec", {"spec": spec})
+        c.call("POST", "/api/monsters/mob_t/anims/idle/generate",
+               {"template": "wan22_5b_i2v.template.json", "count": 1, "sets": {"NUM_FRAMES": "5"}})
+        jobs = c.wait("mob_t")
+        assert jobs[0]["status"] == "done", jobs[0]
+        sent = fc.state.prompts[-1]["7"]["inputs"]["image"]
+        im = Image.open(io.BytesIO(fc.state.uploads[sent]))
+        assert im.mode == "RGB" and im.getpixel((0, 0)) == tuple(color) and im.getpixel((48, 50)) == (150, 90, 50)
+    word = "magenta"
+    assert word in fc.state.prompts[-1]["5"]["inputs"]["text"]

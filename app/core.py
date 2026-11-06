@@ -469,6 +469,27 @@ class Workspace:
         p = self.require(mid) / "ref" / "ref.png"
         return p if p.exists() else None
 
+    def key_color(self, mid: str) -> tuple[int, int, int]:
+        bg = self.spec(mid).get("background") or {}
+        c = bg.get("color")
+        if bg.get("mode") == "key" and isinstance(c, list) and len(c) == 3:
+            return tuple(int(v) for v in c)
+        return (0, 255, 0)
+
+    def ai_input(self, mid: str) -> Path:
+        """Ảnh đưa cho AI. Ảnh chuẩn có nền trong suốt (thường gặp khi xuất từ Spine) được lót màu khoá,
+        vì ComfyUI bỏ kênh alpha và nền trong suốt sẽ thành đen – dễ lẫn với quái tối màu."""
+        ref = self.ref_path(mid)
+        with Image.open(ref) as im:
+            rgba = im.convert("RGBA")
+        if int(np.asarray(rgba)[..., 3].min()) >= 250:
+            return ref
+        flat = Image.new("RGBA", rgba.size, self.key_color(mid) + (255,))
+        flat.alpha_composite(rgba)
+        out = ref.parent / "ref_ai.png"
+        flat.convert("RGB").save(out)
+        return out
+
     def import_frame(self, mid: str, anim: str, filename: str, data: bytes, first: bool) -> int:
         self.check_anim(mid, anim)
         name = safe_name(filename)
@@ -539,6 +560,7 @@ class Workspace:
         if not ref:
             raise AppError("Chưa có ảnh chuẩn. Tải ảnh chuẩn của quái lên trước khi sinh bằng AI.")
         _, meta, _ = cl.load_template(tpl)
+        ref = self.ai_input(mid)
         images = [ref, ref] if "INPUT_IMAGE_2" in (meta.get("defaults") or {}) else [ref]
         all_sets = {"PROMPT": prompt, **{k: str(v) for k, v in (sets or {}).items() if str(v).strip() != ""}}
         done = []
@@ -715,6 +737,7 @@ class App:
         self.ws = Workspace(Path(workspace or self.settings.get("workspace")))
         self.jobs = Jobs()
         self.poll = 2.0  # giây giữa hai lần hỏi ComfyUI
+        self.comfy_candidates = list(cl.LOCAL_CANDIDATES)  # tự dò: Portable 8188, Desktop 8000
         self._doctor = {"at": 0.0, "data": None}
         self._doctor_lock = threading.Lock()
 
@@ -730,6 +753,18 @@ class App:
                 data = {"connected": True, **rep}
             except cl.ComfyError as e:
                 data = {"connected": False, "error": str(e), "templates": []}
+                # Địa chỉ đang dùng là một cổng cục bộ quen thuộc mà không trả lời → thử cổng còn lại
+                # (người dùng cài ComfyUI Desktop thì cổng là 8000, Portable là 8188). Địa chỉ tự đặt khác thì giữ nguyên.
+                cur = (self.settings.get("comfy_url") or "").rstrip("/")
+                if cur in [c.rstrip("/") for c in self.comfy_candidates]:
+                    alt = cl.find_comfy([c for c in self.comfy_candidates if c.rstrip("/") != cur])
+                    if alt:
+                        self.settings.update({"comfy_url": alt})
+                        try:
+                            rep = cl.doctor(self.comfy(timeout=10), TEMPLATES_DIR, cl.load_registry(None))
+                            data = {"connected": True, "auto_url": alt, **rep}
+                        except cl.ComfyError as e2:
+                            data = {"connected": False, "error": str(e2), "templates": []}
             self._doctor = {"at": time.time(), "data": data}
             return data
 

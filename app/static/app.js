@@ -79,7 +79,8 @@ function renderMachine() {
       <button class="btn btn-quiet btn-small" data-action="recheck" type="button">Kiểm tra lại</button>`;
     return;
   }
-  el.innerHTML = `<span class="on"><span class="dot"></span>ComfyUI đã kết nối</span>
+  const port = (S.status.settings?.comfy_url || "").split(":").pop();
+  el.innerHTML = `<span class="on"><span class="dot"></span>ComfyUI đã kết nối${port ? ` (cổng ${esc(port)})` : ""}</span>
     <span>Card <b>${esc(gpuName(d.gpu))}</b>, ${esc(d.vram_gb)} GB VRAM</span>
     <button class="btn btn-quiet btn-small" data-action="recheck" type="button">Kiểm tra lại</button>`;
 }

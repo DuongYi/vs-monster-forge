@@ -44,6 +44,8 @@ from urllib import error, parse, request
 VERSION = "0.2.0"
 TEMPLATE_SCHEMA = "asset-gen.comfy-template/1"
 DEFAULT_URL = "http://127.0.0.1:8188"
+# ComfyUI Portable/cài tay mặc định cổng 8188; ComfyUI Desktop mặc định cổng 8000.
+LOCAL_CANDIDATES = ("http://127.0.0.1:8188", "http://127.0.0.1:8000")
 HERE = Path(__file__).resolve().parent
 DEFAULT_REGISTRY = HERE.parent / "workflows" / "registry.json"
 DEFAULT_TEMPLATES = HERE.parent / "workflows"
@@ -167,6 +169,17 @@ class Comfy:
                 self.post_json("/queue", {"delete": [prompt_id]})
         except ComfyError:
             pass
+
+
+def find_comfy(candidates=LOCAL_CANDIDATES, timeout: float = 3) -> str | None:
+    """Trả địa chỉ đầu tiên trong danh sách có ComfyUI đang trả lời, hoặc None."""
+    for url in candidates:
+        try:
+            Comfy(url, timeout=timeout).get("/system_stats")
+            return url.rstrip("/")
+        except (ComfyError, ValueError):
+            continue
+    return None
 
 
 # ───────────────────────────── WebSocket (tiến độ trực tiếp) ─────────────────────────────
@@ -1025,7 +1038,8 @@ def _parse_sets(items: list[str]) -> dict[str, str]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Điều khiển ComfyUI cục bộ cho asset-gen (không cần Cloud).")
-    ap.add_argument("--url", default=DEFAULT_URL, help=f"địa chỉ ComfyUI (mặc định {DEFAULT_URL})")
+    ap.add_argument("--url", default=None,
+                    help="địa chỉ ComfyUI (mặc định tự dò 127.0.0.1:8188 rồi 127.0.0.1:8000)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("doctor", help="kiểm máy và mô hình")
@@ -1064,7 +1078,11 @@ def main(argv=None) -> int:
     r.add_argument("--dry-run", action="store_true", help="chỉ in workflow đã điền, không chạy")
 
     args = ap.parse_args(argv)
-    c = Comfy(args.url)
+    url = args.url
+    needs_server = args.cmd in ("doctor", "validate") or (args.cmd == "run" and not args.dry_run)
+    if url is None:
+        url = (find_comfy() if needs_server else None) or DEFAULT_URL
+    c = Comfy(url)
     try:
         if args.cmd == "doctor":
             rep = doctor(c, Path(args.templates), load_registry(args.registry))

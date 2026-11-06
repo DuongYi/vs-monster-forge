@@ -325,3 +325,17 @@ def test_cli_run_prints_progress(tmp_path, capsys):
     out = capsys.readouterr().out
     assert code == 0
     assert "[1/1] Sinh khung: bước 4/4" in out and "[1/1] Xong" in out
+
+
+def test_find_comfy_picks_first_live_url():
+    with FakeComfy() as fc:
+        assert cl.find_comfy(["http://127.0.0.1:9", fc.url], timeout=2) == fc.url
+    assert cl.find_comfy(["http://127.0.0.1:9"], timeout=2) is None
+
+
+def test_cli_autodetects_when_url_omitted(monkeypatch, capsys):
+    with FakeComfy() as fc:
+        monkeypatch.setattr(cl, "LOCAL_CANDIDATES", ("http://127.0.0.1:9", fc.url))
+        monkeypatch.setattr(cl.find_comfy, "__defaults__", (cl.LOCAL_CANDIDATES, 2))
+        assert cl.main(["doctor"]) == 0
+    assert "RTX 4060 Ti" in capsys.readouterr().out

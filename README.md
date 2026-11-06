@@ -2,6 +2,8 @@
 
 Công cụ làm quái frame-by-frame cho game 2D, chạy trên máy nhà.
 
+> **Lần đầu dựng trên máy có card NVIDIA, hoặc cần quy tắc làm việc: đọc [HUONG-DAN.md](HUONG-DAN.md).** Tài liệu có link tải mô hình, các bước chạy thử, quy tắc bắt buộc và cách xử lý sự cố.
+
 Ứng dụng làm animation frame-by-frame (FBF) cho quái game, giữ nguyên phong cách ảnh. Mọi thứ chạy trên máy của studio, không thuê cloud:
 - **ComfyUI** và mô hình **Wan 2.2** đều miễn phí, dùng được thương mại (Apache 2.0).
 - Quái cũ có thể **xuất thẳng từ Spine**, không cần AI, không cần card mạnh.
@@ -27,7 +29,7 @@ Công cụ làm quái frame-by-frame cho game 2D, chạy trên máy nhà.
 Bật **Nâng cao** (góc trên phải) để thấy thêm: seed, số khung, kích thước, prompt loại trừ, sửa spec JSON, bảng QA đầy đủ, nhật ký từng việc.
 
 ## Để dùng được phần AI (làm một lần)
-1. Cài **ComfyUI** (bản Desktop hoặc Portable cho Windows) trên máy có card NVIDIA. Mở và để chạy; mặc định ở `http://127.0.0.1:8188`.
+1. Cài **ComfyUI** (bản Desktop hoặc Portable cho Windows) trên máy có card NVIDIA. Mở và để chạy. Xưởng Quái tự dò cả cổng 8188 (Portable) và 8000 (Desktop).
 2. Đặt 3 file mô hình Wan 2.2 5B (chạy được trên card 8 GB) vào đúng thư mục trong ComfyUI:
    | File | Thư mục |
    |---|---|
@@ -79,7 +81,7 @@ plugin/skills/asset-gen/        skill + script + mẫu workflow + registry giấ
 pip install pytest
 python -m pytest -q app/tests plugin/skills/asset-gen/tests
 ```
-Kết quả hiện tại: 56 test đạt. Toàn bộ chạy trên dữ liệu và ComfyUI giả lập; bản giả lập phát cả sự kiện WebSocket giống ComfyUI thật.
+Kết quả hiện tại: 60 test đạt. Toàn bộ chạy trên dữ liệu và ComfyUI giả lập; bản giả lập phát cả sự kiện WebSocket giống ComfyUI thật.
 
 ## Chưa làm
 | Hạng mục | Cần gì |
