@@ -1,0 +1,83 @@
+{
+  "_doc": "Sổ đăng ký mô hình và workflow cho quái FBF, chạy ComfyUI CỤC BỘ (không Cloud). license_status: ok | check (cần đọc model card) | avoid. 'files' là mẫu tên file (glob, không phân biệt hoa thường): comfy_local.py validate chặn mọi file mô hình không khớp mục 'ok'. Workflow status: planned | untested (có file mẫu, chưa chạy thử) | tested.",
+  "updated": "2026-11-06",
+  "budget": {
+    "max_runs_per_call": 6,
+    "max_runs_per_animation": 3,
+    "max_gpu_hours_per_day": 6,
+    "_note": "Chạy trên máy nhà nên không tốn tiền thuê; giới hạn để tránh vòng lặp sinh lại vô hạn và giữ máy cho việc khác."
+  },
+  "models": [
+    {"id": "wan2.2-ti2v-5b", "kind": "image-to-video", "license": "Apache-2.0", "license_status": "ok",
+     "verified": "2026-11-06", "source": "https://blog.comfy.org/p/wan22-day-0-support-in-comfyui",
+     "files": ["wan2.2_ti2v_5B_*.safetensors", "wan2.2_vae.safetensors", "umt5_xxl_*.safetensors"],
+     "note": "Chạy được card 8 GB nhờ offload của ComfyUI (theo comfyui-wiki). Mặc định cho máy tầm trung."},
+    {"id": "wan2.2-i2v-a14b", "kind": "image-to-video", "license": "Apache-2.0", "license_status": "ok",
+     "verified": "2026-11-06", "source": "https://blog.comfy.org/p/wan22-day-0-support-in-comfyui",
+     "files": ["wan2.2_i2v_high_noise_14B_*.safetensors", "wan2.2_i2v_low_noise_14B_*.safetensors",
+               "wan_2.1_vae.safetensors", "umt5_xxl_*.safetensors"],
+     "note": "Chất lượng cao hơn, cần card lớn. Có workflow first-last-frame (node WanFirstLastFrameToVideo) để khép vòng lặp."},
+    {"id": "wan2.2-i2v-a14b-gguf", "kind": "image-to-video (lượng tử hoá)", "license": "Apache-2.0 (bản gốc); bản GGUF do cộng đồng đóng gói",
+     "license_status": "check", "files": ["wan2.2-i2v-a14b-*.gguf", "wan2.2_i2v_*14b*.gguf"],
+     "note": "Cho card 12–16 GB. Cần custom node ComfyUI-GGUF. Kiểm trang phát hành của bản GGUF trước khi đổi sang ok."},
+    {"id": "wan-vace", "kind": "video-control (pose/depth/lineart → video)", "license": "Apache-2.0 (theo nhà phát hành)",
+     "license_status": "check", "files": ["wan*vace*.safetensors"],
+     "note": "Cho workflow repaint từ video render Spine."},
+    {"id": "qwen-image", "kind": "text-to-image", "license": "Apache-2.0", "license_status": "check", "files": ["qwen_image_*.safetensors"]},
+    {"id": "qwen-image-edit", "kind": "image-edit", "license": "Apache-2.0", "license_status": "check", "files": ["qwen_image_edit*.safetensors"]},
+    {"id": "z-image-turbo", "kind": "text-to-image", "license": "Apache-2.0", "license_status": "check", "files": ["z_image_turbo*.safetensors"]},
+    {"id": "flux2-klein-4b", "kind": "text-to-image", "license": "Apache-2.0", "license_status": "check", "files": ["flux*2*klein*4b*.safetensors"]},
+    {"id": "birefnet", "kind": "background-removal", "license": "MIT (theo nhà phát hành)", "license_status": "check", "files": ["birefnet*"]},
+    {"id": "kandinsky-6-video", "kind": "image-to-video", "license": "MIT", "license_status": "check",
+     "source": "https://www.scriptbyai.com/best-open-ai-video-generation-models/", "files": ["kandinsky*6*"]},
+    {"id": "longcat-video", "kind": "image-to-video", "license": "MIT", "license_status": "check",
+     "source": "https://www.scriptbyai.com/best-open-ai-video-generation-models/", "files": ["longcat*"]},
+    {"id": "flux2-dev", "license": "phi thương mại", "license_status": "avoid", "files": ["flux*2*dev*"]},
+    {"id": "flux2-klein-9b", "license": "phi thương mại", "license_status": "avoid", "files": ["flux*2*klein*9b*"]},
+    {"id": "ltx-2.5", "license": "LTX-2.x Community License (giới hạn doanh thu)", "license_status": "avoid", "files": ["ltx*"]},
+    {"id": "hunyuanvideo-1.5", "license": "Tencent Hunyuan Community License (giới hạn lãnh thổ)", "license_status": "avoid", "files": ["hunyuan*"]},
+    {"id": "minimax-h3", "license": "MiniMax H3 Community License (cần cấp phép)", "license_status": "avoid", "files": ["minimax*"]}
+  ],
+  "loras": [
+    {"id": "dpvs_style", "status": "planned", "license_status": "ok", "files": ["dpvs_style*.safetensors"],
+     "note": "Huấn luyện từ ảnh render Spine của quái hiện có (tài sản studio). Xem reference/migration-spine-to-fbf.md mục 4."}
+  ],
+  "workflows": [
+    {
+      "id": "spine_export",
+      "status": "untested",
+      "_note": "postprocess đã test với chuỗi PNG có alpha (giả lập); chưa thử với file xuất từ Spine thật.",
+      "purpose": "Quái cũ: xuất thẳng animation Spine thành chuỗi PNG → postprocess. Không dùng AI, không cần GPU, đúng 100% phong cách.",
+      "approach": "Spine Editor ▸ Export ▸ PNG sequence, fps = fps trong spec (spine_timing.py), nền trong suốt. Đặt vào raw/<id>/<anim>/.",
+      "file": null
+    },
+    {
+      "id": "wan22_5b_i2v",
+      "status": "untested",
+      "purpose": "Ảnh gốc của quái → chuỗi khung PNG.",
+      "approach": "Wan 2.2 TI2V-5B, lưu SaveImage (không nén video). Mẫu viết tay – validate trên máy trước khi dùng.",
+      "file": "wan22_5b_i2v.template.json"
+    },
+    {
+      "id": "wan22_14b_flf",
+      "status": "planned",
+      "purpose": "Anim lặp (idle, run): khung đầu = khung cuối = ảnh gốc, vòng lặp khép kín.",
+      "approach": "Mở template 'Wan2.2 14B First-Last Frame' có sẵn trong ComfyUI ▸ đổi node lưu sang SaveImage ▸ Export (API) ▸ templatize.",
+      "file": null
+    },
+    {
+      "id": "monster_base_pose",
+      "status": "planned",
+      "purpose": "Ảnh gốc quái mới: tư thế idle, quay phải, nền phẳng, đúng phong cách.",
+      "approach": "text-to-image + LoRA dpvs_style + ảnh mẫu. Cần chọn mô hình sau khi kiểm giấy phép (đang 'check').",
+      "file": null
+    },
+    {
+      "id": "monster_anim_repaint",
+      "status": "planned",
+      "purpose": "Vẽ lại anim Spine cũ chi tiết hơn, giữ đúng nhịp.",
+      "approach": "Video render Spine làm điều khiển (VACE) + ảnh gốc + LoRA.",
+      "file": null
+    }
+  ]
+}

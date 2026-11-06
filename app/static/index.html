@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Xưởng Quái</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Xưởng Quái – trang đầu">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 5v14M17 5v14" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
+      <span>Xưởng Quái</span>
+    </a>
+    <div id="machine" class="machine" role="status" aria-live="polite"></div>
+    <div class="topbar-actions">
+      <label class="switch"><input type="checkbox" id="advanced"><span>Nâng cao</span></label>
+      <button class="btn btn-quiet" id="btn-settings" type="button">Cài đặt</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <button class="btn btn-primary btn-block" id="btn-new" type="button">Tạo quái mới</button>
+      <nav id="monster-list" aria-label="Danh sách quái"></nav>
+    </aside>
+    <main id="main" tabindex="-1"></main>
+  </div>
+
+  <section id="tray" class="tray" aria-live="polite" aria-label="Việc đang chạy"></section>
+
+  <dialog id="dlg-new" aria-labelledby="dlg-new-title">
+    <form method="dialog" id="form-new" class="dialog-body">
+      <h2 id="dlg-new-title">Tạo quái mới</h2>
+      <label class="field">
+        <span>Mã quái</span>
+        <input name="monster_id" required pattern="[a-z0-9_]{2,64}" placeholder="mob_lang_dau_01" autocomplete="off">
+        <small>Trùng mã quái trong dữ liệu game. Chỉ chữ thường, số và dấu _.</small>
+      </label>
+      <label class="field">
+        <span>Tên hiển thị</span>
+        <input name="display_name" placeholder="Lang Đầu Binh" autocomplete="off">
+      </label>
+      <fieldset class="field">
+        <legend>Lấy danh sách animation từ</legend>
+        <label class="radio"><input type="radio" name="from" value="spine" checked> File Spine JSON của quái (giữ nguyên tên, nhịp và sự kiện)</label>
+        <label class="radio"><input type="radio" name="from" value="preset"> Bộ animation chuẩn (quái mới chưa có Spine)</label>
+      </fieldset>
+      <div class="from-spine">
+        <label class="field">
+          <span>File Spine JSON</span>
+          <input type="file" name="spine" accept=".json,application/json">
+          <small>Trong Spine Editor: Export ▸ JSON.</small>
+        </label>
+        <label class="field field-inline">
+          <span>Khung mỗi giây</span>
+          <input type="number" name="fps" value="12" min="4" max="30">
+        </label>
+      </div>
+      <div class="from-preset" hidden>
+        <label class="field">
+          <span>Bộ animation</span>
+          <select name="preset"></select>
+        </label>
+      </div>
+      <label class="field field-inline">
+        <span>Chiều cao quái khi xuất (px)</span>
+        <input type="number" name="target_height" value="170" min="32" max="1024">
+      </label>
+      <p class="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn btn-quiet" value="cancel" type="button" data-close>Huỷ</button>
+        <button class="btn btn-primary" type="submit">Tạo quái</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-settings" aria-labelledby="dlg-settings-title">
+    <form method="dialog" id="form-settings" class="dialog-body">
+      <h2 id="dlg-settings-title">Cài đặt</h2>
+      <label class="field">
+        <span>Tên người duyệt</span>
+        <input name="reviewer" autocomplete="name" placeholder="Tên của anh/chị">
+        <small>Ghi vào hồ sơ mỗi lần duyệt.</small>
+      </label>
+      <label class="field">
+        <span>Địa chỉ ComfyUI</span>
+        <input name="comfy_url" placeholder="http://127.0.0.1:8188">
+      </label>
+      <label class="field adv-only">
+        <span>Phần prompt luôn thêm vào sau mô tả động tác</span>
+        <textarea name="prompt_suffix" rows="3"></textarea>
+        <small>{bg} được thay bằng màu nền khoá của quái.</small>
+      </label>
+      <p class="muted" id="workspace-path"></p>
+      <p class="form-error" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="btn btn-quiet" type="button" data-close>Đóng</button>
+        <button class="btn btn-primary" type="submit">Lưu cài đặt</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>

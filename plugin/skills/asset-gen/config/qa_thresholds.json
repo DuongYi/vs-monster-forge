@@ -1,0 +1,23 @@
+{
+  "_doc": "Ghi đè DEFAULT_THRESHOLDS trong scripts/postprocess.py. Giá trị khởi điểm – hiệu chỉnh sau pilot 3 quái. Mỗi ngưỡng QA có warn (cảnh báo) và fail (lỗi).",
+  "bg_uniform_max_de": 14.0,
+  "key_soft_in_de": 18.0,
+  "key_soft_out_de": 40.0,
+  "alpha_floor": 0.04,
+  "min_island_frac": 0.003,
+  "spill_band_px": 3,
+  "halo_de": 28.0,
+  "halo_ratio": {"warn": 0.02, "fail": 0.06},
+  "key_residue_de": 15.0,
+  "key_residue_ratio": {"warn": 0.005, "fail": 0.03},
+  "pop_step": {"warn": 0.04, "fail": 0.08},
+  "area_flicker": {"warn": 0.15, "fail": 0.30},
+  "loop_seam_ratio": {"warn": 1.6, "fail": 2.5},
+  "color_drift_bhatt": {"warn": 0.30, "fail": 0.45},
+  "color_drift_dl": {"warn": 8.0, "fail": 15.0},
+  "scale_spread": {"warn": 1.15, "fail": 1.35},
+  "palette_de": 6.0,
+  "palette_in_ratio_min": 0.98,
+  "atlas_budget_px": 2048,
+  "atlas_max_px": 4096
+}

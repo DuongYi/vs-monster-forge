@@ -1,0 +1,41 @@
+{
+  "_asset_gen": {
+    "schema": "asset-gen.comfy-template/1",
+    "name": "wan22_5b_i2v",
+    "description": "Ảnh gốc của quái → chuỗi khung PNG (Wan 2.2 TI2V-5B). Lưu bằng SaveImage để khung không bị nén như video. MẪU KHỞI ĐẦU VIẾT TAY, CHƯA CHẠY THỬ – chạy validate trên máy trước; nếu lệch, xuất template chính thức từ ComfyUI rồi templatize.",
+    "status": "untested",
+    "created": "2026-11-06T16:40:00+07:00",
+    "source": {"file": "viết tay theo tài liệu Wan 2.2 ComfyUI", "sha256": null},
+    "defaults": {
+      "PROMPT": "2D game monster, full body, side view facing right, idle breathing loop, subtle motion, static camera, locked-off shot, plain flat solid pure green background, no shadow on background",
+      "NEGATIVE": "camera movement, zoom, pan, scenery, gradient background, ground shadow, text, watermark, blurry, deformed, extra limbs, cropped, out of frame",
+      "INPUT_IMAGE": "example.png",
+      "WIDTH": 640,
+      "HEIGHT": 640,
+      "NUM_FRAMES": 49,
+      "SEED": 1001,
+      "STEPS": 20,
+      "PREFIX": "assetgen/wan22_5b_i2v"
+    },
+    "rules": {"NUM_FRAMES": "4n+1", "WIDTH": "multiple_of_32", "HEIGHT": "multiple_of_32"},
+    "min_vram_gb": 8,
+    "required_models": [
+      "wan2.2_ti2v_5B_fp16.safetensors",
+      "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "wan2.2_vae.safetensors"
+    ]
+  },
+  "workflow": {
+    "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "wan2.2_ti2v_5B_fp16.safetensors", "weight_dtype": "default"}},
+    "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "device": "default"}},
+    "3": {"class_type": "VAELoader", "inputs": {"vae_name": "wan2.2_vae.safetensors"}},
+    "4": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["1", 0], "shift": 8.0}},
+    "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": "__PROMPT__"}},
+    "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": "__NEGATIVE__"}},
+    "7": {"class_type": "LoadImage", "inputs": {"image": "__INPUT_IMAGE__"}},
+    "8": {"class_type": "Wan22ImageToVideoLatent", "inputs": {"vae": ["3", 0], "start_image": ["7", 0], "width": "__WIDTH__", "height": "__HEIGHT__", "length": "__NUM_FRAMES__", "batch_size": 1}},
+    "9": {"class_type": "KSampler", "inputs": {"model": ["4", 0], "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["8", 0], "seed": "__SEED__", "steps": "__STEPS__", "cfg": 5.0, "sampler_name": "uni_pc", "scheduler": "simple", "denoise": 1.0}},
+    "10": {"class_type": "VAEDecode", "inputs": {"samples": ["9", 0], "vae": ["3", 0]}},
+    "11": {"class_type": "SaveImage", "inputs": {"images": ["10", 0], "filename_prefix": "__PREFIX__"}}
+  }
+}

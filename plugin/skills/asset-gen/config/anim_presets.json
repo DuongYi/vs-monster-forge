@@ -1,0 +1,55 @@
+{
+  "_doc": "Bộ animation chuẩn cho quái MỚI. Quái chuyển từ Spine thì dùng spine_timing.py để giữ nguyên tên và nhịp cũ. target_height_px là giá trị tạm – đo lại từ chiều cao quái Spine trên màn hình thật.",
+  "mob_thuong": {
+    "target_height_px": 160,
+    "anchor": {"x": "feet", "y": "ground"},
+    "animations": {
+      "idle":   {"frames": 6,  "fps": 10, "loop": true},
+      "run":    {"frames": 8,  "fps": 12, "loop": true},
+      "attack": {"frames": 8,  "fps": 12, "loop": false, "events": {"hit": 5}},
+      "hurt":   {"frames": 3,  "fps": 12, "loop": false},
+      "die":    {"frames": 8,  "fps": 10, "loop": false}
+    },
+    "_tong_khung": 33
+  },
+  "mob_tinh_anh": {
+    "target_height_px": 200,
+    "anchor": {"x": "feet", "y": "ground"},
+    "animations": {
+      "idle":    {"frames": 8,  "fps": 10, "loop": true},
+      "run":     {"frames": 8,  "fps": 12, "loop": true},
+      "attack":  {"frames": 10, "fps": 12, "loop": false, "events": {"hit": 6}},
+      "skill_1": {"frames": 12, "fps": 12, "loop": false, "events": {"hit": 8}},
+      "hurt":    {"frames": 3,  "fps": 12, "loop": false},
+      "die":     {"frames": 10, "fps": 10, "loop": false}
+    },
+    "_tong_khung": 51
+  },
+  "boss": {
+    "target_height_px": 320,
+    "anchor": {"x": "feet", "y": "ground"},
+    "animations": {
+      "appear":   {"frames": 12, "fps": 12, "loop": false},
+      "idle":     {"frames": 8,  "fps": 10, "loop": true},
+      "run":      {"frames": 8,  "fps": 12, "loop": true},
+      "attack_1": {"frames": 10, "fps": 12, "loop": false, "events": {"hit": 6}},
+      "attack_2": {"frames": 12, "fps": 12, "loop": false, "events": {"hit": [5, 9]}},
+      "skill_1":  {"frames": 14, "fps": 12, "loop": false, "events": {"hit": 10}},
+      "hurt":     {"frames": 4,  "fps": 12, "loop": false},
+      "die":      {"frames": 12, "fps": 10, "loop": false}
+    },
+    "_tong_khung": 80,
+    "_note": "Boss lớn + nhiều khung → atlas có thể vượt 2048; cho phép tới 4096 hoặc tách nhiều atlas."
+  },
+  "mob_bay": {
+    "target_height_px": 140,
+    "anchor": {"x": "body", "y": "body"},
+    "animations": {
+      "idle":   {"frames": 6, "fps": 10, "loop": true},
+      "attack": {"frames": 8, "fps": 12, "loop": false, "events": {"hit": 5}},
+      "hurt":   {"frames": 3, "fps": 12, "loop": false},
+      "die":    {"frames": 8, "fps": 10, "loop": false}
+    },
+    "_note": "Quái bay: neo theo trọng tâm thân, không theo mặt đất."
+  }
+}
