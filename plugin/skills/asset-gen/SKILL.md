@@ -18,7 +18,7 @@ Quy tắc không đổi: AI chỉ đọc dữ liệu và nộp **draft**. Ngư�
 | `scripts/comfy_local.py doctor` | Kiểm máy: GPU, VRAM, RAM, mô hình đã có, mẫu nào chạy được |
 | `scripts/comfy_local.py templatize` | Workflow xuất từ ComfyUI (Export (API)) → mẫu dùng lại được |
 | `scripts/comfy_local.py validate` | Mẫu chạy được trên máy này không: node, file mô hình, giấy phép |
-| `scripts/comfy_local.py run` | Chạy mẫu (1 hoặc nhiều seed), tải kết quả về `raw/`, ghi `provenance.json` |
+| `scripts/comfy_local.py run` | Chạy mẫu (1 hoặc nhiều seed), in tiến độ từng bước, tải kết quả về `raw/`, ghi `provenance.json` |
 | `scripts/spine_timing.py` | Spine JSON → spec (giữ tên anim, tên sự kiện, thời lượng) |
 | `scripts/postprocess.py` | Xoá nền, khử viền, scale, căn chân, atlas, manifest, QA (`run` / `check`) |
 | `config/anim_presets.json` | Bộ anim chuẩn: quái thường / tinh anh / boss / bay |

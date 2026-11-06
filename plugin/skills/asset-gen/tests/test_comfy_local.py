@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+import struct
 import sys
 from pathlib import Path
 
@@ -226,3 +227,101 @@ def test_combo_options_both_formats():
     assert cl.combo_options([["a", "b"]]) == ["a", "b"]
     assert cl.combo_options(["COMBO", {"options": ["x"]}]) == ["x"]
     assert cl.combo_options(["INT", {}]) is None
+
+
+# ── theo dõi tiến độ qua WebSocket ──
+
+def test_progress_streams_nodes_steps_and_preview(tmp_path):
+    snaps, previews, logs = [], [], []
+    with FakeComfy(steps=5, step_delay=0.01) as fc:
+        cl.run_template(cl.Comfy(fc.url), TEMPLATE, {"NUM_FRAMES": "9"}, tmp_path / "x",
+                        input_images=[ref_image(tmp_path)], poll=0.01, log=logs.append,
+                        progress=lambda s, p: (snaps.append(s), p and previews.append(p)))
+    phases = [s["phase"] for s in snaps]
+    assert phases[0].startswith("Đang chờ ComfyUI")
+    assert "Nạp mô hình" in phases and "Sinh khung" in phases and "Giải mã khung hình" in phases
+    sampling = [s for s in snaps if s["phase"] == "Sinh khung" and s["steps"]]
+    assert sampling[-1]["step"] == 5 and sampling[-1]["steps"] == 5 and sampling[-1]["node"]["class"] == "KSampler"
+    assert any(s["eta_s"] is not None for s in sampling)
+    assert previews and previews[0][1] == "image/png" and previews[0][0].startswith(b"\x89PNG")
+    last = snaps[-1]
+    assert last["status"] == "done" and last["phase"] == "Xong" and last["run"] == 1 and last["runs"] == 1
+    states = {n["id"]: n["state"] for n in last["nodes"]}
+    assert states["2"] == "cached" and all(v in ("done", "cached") for v in states.values())
+    assert last["nodes"][0]["id"] == "2"                     # thứ tự theo lúc chạy: node dùng lại trước
+    assert not any("không theo dõi" in m for m in logs)
+
+
+def test_progress_falls_back_when_websocket_unavailable(tmp_path):
+    snaps, logs = [], []
+    with FakeComfy(ws_enabled=False) as fc:
+        res = cl.run_template(cl.Comfy(fc.url), TEMPLATE, {"NUM_FRAMES": "5"}, tmp_path / "x",
+                              input_images=[ref_image(tmp_path)], poll=0.01, log=logs.append,
+                              progress=lambda s, p: snaps.append(s))
+    assert res[0]["files"] == 5
+    assert any("không theo dõi chi tiết" in m for m in logs)
+    assert snaps[-1]["status"] == "done"
+
+
+def test_progress_reports_error_node(tmp_path):
+    snaps = []
+    with FakeComfy(fail_exec=True) as fc:
+        with pytest.raises(cl.ComfyError, match="CUDA out of memory"):
+            cl.run_template(cl.Comfy(fc.url), TEMPLATE, {"NUM_FRAMES": "5"}, tmp_path / "x",
+                            input_images=[ref_image(tmp_path)], poll=0.01, log=lambda *a: None,
+                            progress=lambda s, p: snaps.append(s))
+    last = snaps[-1]
+    assert last["status"] == "error" and last["phase"] == "Lỗi" and "CUDA" in last["error"]
+    assert {n["id"]: n["state"] for n in last["nodes"]}["9"] == "error"
+
+
+def test_progress_multi_seed_runs_numbered(tmp_path):
+    snaps = []
+    with FakeComfy(steps=3) as fc:
+        cl.run_template(cl.Comfy(fc.url), TEMPLATE, {"NUM_FRAMES": "5"}, tmp_path / "x", seeds=2,
+                        input_images=[ref_image(tmp_path)], poll=0.01, log=lambda *a: None,
+                        progress=lambda s, p: snaps.append(s))
+    finals = [s for s in snaps if s["status"] == "done"]
+    assert sorted({(s["run"], s["seed"]) for s in finals}) == [(1, 1001), (2, 1002)]
+    assert all(s["runs"] == 2 for s in snaps)
+
+
+def test_tracker_handles_progress_state_and_interrupt():
+    wf, _, _ = cl.load_template(TEMPLATE)
+    t = cl.ProgressTracker(wf)
+    t.handle({"type": "execution_start", "data": {}})
+    t.handle({"type": "progress_state", "data": {"nodes": {"1": {"state": "finished"}, "9": {"state": "running", "value": 3, "max": 20}}}})
+    s = t.snapshot()
+    assert s["phase"] == "Sinh khung" and (s["step"], s["steps"]) == (3, 20)
+    assert {n["id"]: n["state"] for n in s["nodes"]}["1"] == "done"
+    t.handle({"type": "execution_interrupted", "data": {"node_id": "9"}})
+    s = t.snapshot()
+    assert s["phase"] == "Đã dừng" and {n["id"]: n["state"] for n in s["nodes"]}["9"] == "interrupted"
+
+
+def test_extract_preview_formats():
+    png = b"\x89PNG\r\n\x1a\n" + b"x" * 20
+    assert cl.extract_preview(struct.pack(">II", 1, 2) + png) == (png, "image/png")
+    jpg = b"\xff\xd8\xff\xe0" + b"y" * 20
+    meta = json.dumps({"node_id": "9"}).encode()
+    assert cl.extract_preview(struct.pack(">II", 4, len(meta)) + meta + jpg) == (jpg, "image/jpeg")
+    assert cl.extract_preview(b"\x00\x00\x00\x01\x00\x00\x00\x02nothing-here") is None
+
+
+def test_phase_labels():
+    assert cl.phase_label("UNETLoader") == "Nạp mô hình"
+    assert cl.phase_label("LoadImage") == "Nạp ảnh chuẩn"
+    assert cl.phase_label("KSamplerAdvanced") == "Sinh khung"
+    assert cl.phase_label("Wan22ImageToVideoLatent") == "Chuẩn bị khung"
+    assert cl.phase_label("VAEDecodeTiled") == "Giải mã khung hình"
+    assert cl.phase_label("SaveImage") == "Lưu kết quả"
+    assert cl.phase_label("SomethingCustom") == "SomethingCustom"
+
+
+def test_cli_run_prints_progress(tmp_path, capsys):
+    with FakeComfy(steps=4) as fc:
+        code = cl.main(["--url", fc.url, "run", "--template", str(TEMPLATE), "--dest", str(tmp_path / "x"),
+                        "--input-image", str(ref_image(tmp_path)), "--set", "NUM_FRAMES=5", "--poll", "0.01"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "[1/1] Sinh khung: bước 4/4" in out and "[1/1] Xong" in out

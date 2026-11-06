@@ -37,6 +37,20 @@ Bật **Nâng cao** (góc trên phải) để thấy thêm: seed, số khung, k�
 
    Cách dễ nhất: mở template "Wan 2.2 5B" trong ComfyUI. Nếu thiếu file, ComfyUI sẽ báo và chỉ chỗ tải.
 3. Trong Xưởng Quái bấm **Kiểm tra lại** ở thanh trên. Thanh trên sẽ hiện tên card, VRAM và trạng thái "ComfyUI đã kết nối".
+4. Nên cài thêm **ComfyUI-Manager** (miễn phí) để tự tìm và cài node hoặc mô hình còn thiếu khi mở workflow mới.
+
+### Theo dõi trực tiếp khi đang sinh
+Khay việc ở cuối màn hình hiện ngay trong lúc ComfyUI chạy:
+- đang ở biến thể nào;
+- bước nào của flow, gọi bằng tiếng Việt: "Nạp mô hình", "Đọc mô tả động tác", "Sinh khung: bước 12/20", "Giải mã khung hình"…;
+- thanh tiến độ và thời gian còn lại ước tính;
+- ảnh xem trước nhỏ.
+
+Bật **Nâng cao** rồi mở "Các bước trong flow" để xem từng node: xong, dùng lại, đang chạy hay lỗi, mỗi node mất bao lâu.
+
+- Ảnh xem trước chỉ có khi ComfyUI bật xem trước lúc sinh: chạy ComfyUI với `--preview-method auto`, hoặc bật live preview trong cài đặt của ComfyUI.
+- Nếu ComfyUI không cho kết nối WebSocket, việc sinh vẫn chạy bình thường, chỉ không có tiến độ chi tiết.
+- Muốn soi sâu hơn, mở giao diện đồ thị của chính ComfyUI (`http://127.0.0.1:8188`). Kéo một ảnh kết quả thả vào đó thường mở lại đúng flow đã dùng.
 
 > Mẫu workflow Wan 2.2 trong gói **chưa từng chạy trên ComfyUI thật** (chỉ thử với ComfyUI giả lập). Nếu báo lệch node, làm theo `plugin/skills/asset-gen/workflows/README.md` để tạo mẫu từ template có sẵn trong ComfyUI.
 
@@ -65,7 +79,7 @@ plugin/skills/asset-gen/        skill + script + mẫu workflow + registry giấ
 pip install pytest
 python -m pytest -q app/tests plugin/skills/asset-gen/tests
 ```
-Kết quả hiện tại: 47 test đạt. Toàn bộ chạy trên dữ liệu và ComfyUI giả lập.
+Kết quả hiện tại: 56 test đạt. Toàn bộ chạy trên dữ liệu và ComfyUI giả lập; bản giả lập phát cả sự kiện WebSocket giống ComfyUI thật.
 
 ## Chưa làm
 | Hạng mục | Cần gì |

@@ -198,7 +198,8 @@ class Jobs:
         jid = uuid.uuid4().hex[:12]
         job = {"id": jid, "lane": lane, "title": title, "monster": monster, "kind": kind, "anim": anim,
                "status": "queued", "log": [], "error": None, "result": None,
-               "created": now(), "started": None, "finished": None, "t0": None, "elapsed": 0.0}
+               "created": now(), "started": None, "finished": None, "t0": None, "elapsed": 0.0,
+               "progress": None, "_preview": None, "preview_v": 0}
         with self._lock:
             self._jobs[jid] = job
             self._fns[jid] = fn
@@ -225,6 +226,19 @@ class Jobs:
                     job["log"].append(msg)
                     del job["log"][:-400]
 
+            def progress(snapshot: dict, preview=None):
+                """Tiến độ trực tiếp từ ComfyUI: lưu trạng thái mới nhất và ảnh xem trước mới nhất."""
+                with self._lock:
+                    old = job["progress"] or {}
+                    if (old.get("variant"), old.get("run")) != (snapshot.get("variant"), snapshot.get("run")):
+                        job["_preview"] = None  # sang lượt/biến thể mới: bỏ ảnh xem trước của lượt trước
+                    job["progress"] = snapshot
+                    if preview:
+                        job["_preview"] = preview
+                        job["preview_v"] += 1
+
+            log.progress = progress
+
             try:
                 result = fn(log)
                 with self._lock:
@@ -250,8 +264,14 @@ class Jobs:
             j = self._jobs.get(jid)
             return self._public(j) if j else None
 
+    def preview(self, jid: str) -> tuple[bytes, str] | None:
+        with self._lock:
+            j = self._jobs.get(jid)
+            return j["_preview"] if j else None
+
     def _public(self, j: dict) -> dict:
-        out = {k: v for k, v in j.items() if k != "t0"}
+        out = {k: v for k, v in j.items() if k not in ("t0", "_preview")}
+        out["has_preview"] = j["_preview"] is not None
         if j["status"] == "running" and j["t0"]:
             out["elapsed"] = round(time.time() - j["t0"], 1)
         out["log"] = list(j["log"][-200:])
@@ -528,8 +548,16 @@ class Workspace:
                 break
             vdir = self.mdir(mid) / "variants" / anim / f"seed_{s}"
             log(f"Sinh '{anim}' – seed {s}")
+            report = getattr(log, "progress", None)
+            idx, total = len(done) + 1, len(seeds)
+
+            def on_progress(snap, prev, _idx=idx, _total=total):
+                if report:
+                    report(dict(snap, variant=_idx, variants=_total), prev)
+
             cl.run_template(comfy, tpl, all_sets, vdir, seed_list=[s], input_images=images, overwrite=True,
-                            tag=f"{mid}_{anim}", poll=poll, log=lambda m: log(m.strip()))
+                            tag=f"{mid}_{anim}", poll=poll, log=lambda m: log(m.strip()),
+                            progress=on_progress if report else None)
             done.append(self.finish_variant(mid, anim, vdir, log))
         return {"variants": done}
 

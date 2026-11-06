@@ -241,6 +241,23 @@ dialog::backdrop { background: rgba(21, 26, 32, .45); }
 .job .state-dot.done { background: var(--ok); } .job .state-dot.error { background: var(--bad); }
 .job .state-dot.cancelled, .job .state-dot.queued { background: var(--ink-2); }
 .job .job-error { grid-column: 2 / -1; color: var(--bad); }
+.job-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.job-live { display: flex; gap: 10px; align-items: center; }
+.job-thumb { width: 64px; height: 64px; object-fit: contain; border-radius: 4px; border: 1px solid var(--line); background: var(--sheet-2); flex: none; }
+.job-live-text { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; color: var(--ink); }
+.bar { display: block; height: 6px; border-radius: 3px; background: var(--indigo-wash); overflow: hidden; max-width: 420px; }
+.bar > span { display: block; height: 100%; background: var(--indigo); transition: width .4s ease; }
+@media (prefers-reduced-motion: reduce) { .bar > span { transition: none; } }
+.flow-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.flow-list li { display: grid; grid-template-columns: 12px minmax(130px, auto) 1fr auto; gap: 8px; align-items: center; font-size: 12px; }
+.fs-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-2); }
+.fs-done .fs-dot, .fs-cached .fs-dot { background: var(--ok); border-color: var(--ok); }
+.fs-cached .fs-dot { background: transparent; }
+.fs-running .fs-dot { background: var(--indigo); border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-wash); }
+.fs-error .fs-dot, .fs-interrupted .fs-dot { background: var(--bad); border-color: var(--bad); }
+.fs-running .fs-label { font-weight: 600; color: var(--indigo); }
+.fs-error .fs-state { color: var(--bad); }
+.fs-state { color: var(--ink-2); }
 .job details { grid-column: 2 / -1; }
 .job details > summary { margin-top: 0; font-size: 12px; font-weight: 500; }
 .job pre { font-family: var(--mono); font-size: 12px; max-height: 180px; overflow: auto; background: var(--sheet-2); padding: 8px; border-radius: 6px; margin: 4px 0 0; white-space: pre-wrap; }

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core  # noqa: E402
 
 STATIC = Path(__file__).resolve().parent / "static"
+RAW_SENT = object()  # route đã tự gửi phản hồi (ảnh), không gói JSON
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("image/gif", ".gif")
 
@@ -135,6 +136,20 @@ def make_handler(app: core.App, allowed_hosts: set[str]):
     def list_jobs(h, q):
         return jobs.list(q.get("monster"))
 
+    @route("GET", r"/api/jobs/(?P<jid>[a-f0-9]+)/preview")
+    def job_preview(h, q, jid):
+        prev = jobs.preview(jid)
+        if not prev:
+            raise core.AppError("Việc này chưa có ảnh xem trước")
+        data, mime = prev
+        h.send_response(200)
+        h.send_header("Content-Type", mime)
+        h.send_header("Content-Length", str(len(data)))
+        h.send_header("Cache-Control", "max-age=3600")  # URL có ?v=… đổi theo mỗi ảnh mới
+        h.end_headers()
+        h.wfile.write(data)
+        return RAW_SENT
+
     @route("POST", r"/api/jobs/(?P<jid>[a-f0-9]+)/cancel")
     def cancel_job(h, q, jid):
         return jobs.cancel(jid)
@@ -219,7 +234,8 @@ def make_handler(app: core.App, allowed_hosts: set[str]):
                         continue
                     mt = rx.match(path)
                     if mt:
-                        return self.send_json(200, fn(self, q, **mt.groupdict()))
+                        out = fn(self, q, **mt.groupdict())
+                        return None if out is RAW_SENT else self.send_json(200, out)
                 return self.send_json(404, {"error": f"Không có đường dẫn {path}"})
             except core.AppError as e:
                 return self.send_json(400, {"error": str(e)})

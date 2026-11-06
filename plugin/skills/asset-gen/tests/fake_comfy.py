@@ -2,10 +2,14 @@
 """ComfyUI giả lập (chỉ các endpoint comfy_local.py dùng) để test không cần GPU."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import io
 import json
 import math
+import struct
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -15,23 +19,96 @@ from PIL import Image
 import synth
 
 GB = 1024 ** 3
+WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+def ws_send(conn, op: int, payload: bytes) -> None:
+    """Gửi một khung WebSocket từ phía máy chủ (không che mặt nạ)."""
+    sock, lock = conn
+    n = len(payload)
+    head = bytes([0x80 | op])
+    if n < 126:
+        head += bytes([n])
+    elif n < 65536:
+        head += bytes([126]) + struct.pack(">H", n)
+    else:
+        head += bytes([127]) + struct.pack(">Q", n)
+    with lock:
+        sock.sendall(head + payload)
+
+
+def tiny_png() -> bytes:
+    buf = io.BytesIO()
+    Image.fromarray(synth.draw_monster(0.0, size=(64, 64), scale=0.18)).save(buf, "PNG")
+    return buf.getvalue()
 
 
 class FakeState:
     def __init__(self, vram_gb=16, ram_gb=64, unet=("wan2.2_ti2v_5B_fp16.safetensors",),
                  clip=("umt5_xxl_fp8_e4m3fn_scaled.safetensors",), vae=("wan2.2_vae.safetensors",),
-                 extra_nodes=None, fail_exec=False, never_finish=False, delay_polls=1, frame_size=512):
+                 extra_nodes=None, fail_exec=False, never_finish=False, delay_polls=1, frame_size=512,
+                 ws_enabled=True, steps=6, step_delay=0.0, cache_nodes=("2",)):
         self.vram_gb, self.ram_gb = vram_gb, ram_gb
         self.unet, self.clip, self.vae = list(unet), list(clip), list(vae)
         self.extra_nodes = extra_nodes or {}
         self.fail_exec, self.never_finish, self.delay_polls = fail_exec, never_finish, delay_polls
         self.frame_size = frame_size
+        self.ws_enabled, self.steps, self.step_delay = ws_enabled, steps, step_delay
+        self.cache_nodes = list(cache_nodes)
+        self.ws: dict[str, tuple] = {}
         self.uploads: dict[str, bytes] = {"example.png": b""}
         self.files: dict[tuple[str, str], bytes] = {}
         self.jobs: dict[str, dict] = {}
         self.interrupted: list = []
         self.deleted: list = []
         self.prompts: list[dict] = []
+
+    def emit_events(self, cid: str, pid: str, wf: dict, job: dict) -> None:
+        """Phát sự kiện giống ComfyUI thật cho client đã gửi job."""
+        conn = self.ws.get(cid)
+        if not conn:
+            job["events_done"] = True
+            return
+
+        def send(obj):
+            ws_send(conn, 1, json.dumps(obj).encode())
+
+        try:
+            send({"type": "status", "data": {"status": {"exec_info": {"queue_remaining": 1}}, "sid": cid}})
+            send({"type": "execution_start", "data": {"prompt_id": pid}})
+            ids = sorted(wf, key=lambda k: int(k) if k.isdigit() else 10 ** 9)
+            cached = [i for i in ids if i in self.cache_nodes]
+            send({"type": "execution_cached", "data": {"nodes": cached, "prompt_id": pid}})
+            for nid in ids:
+                if nid in cached:
+                    continue
+                if job.get("interrupted"):
+                    send({"type": "execution_interrupted", "data": {"prompt_id": pid, "node_id": nid}})
+                    return
+                send({"type": "executing", "data": {"node": nid, "display_node": nid, "prompt_id": pid}})
+                if wf[nid]["class_type"] == "KSampler":
+                    if self.never_finish:  # đứng ở bước lấy mẫu tới khi bị dừng
+                        while not job.get("interrupted"):
+                            time.sleep(0.02)
+                        send({"type": "execution_interrupted", "data": {"prompt_id": pid, "node_id": nid}})
+                        return
+                    for v in range(1, self.steps + 1):
+                        send({"type": "progress", "data": {"value": v, "max": self.steps, "prompt_id": pid, "node": nid}})
+                        if v == max(1, self.steps // 2):
+                            ws_send(conn, 2, struct.pack(">II", 1, 2) + tiny_png())  # 1 = ảnh xem trước, 2 = PNG
+                        time.sleep(self.step_delay)
+                    if self.fail_exec:
+                        send({"type": "execution_error", "data": {"prompt_id": pid, "node_id": nid, "node_type": "KSampler",
+                                                                  "exception_message": "CUDA out of memory"}})
+                        return
+                if wf[nid]["class_type"] == "SaveImage":
+                    send({"type": "executed", "data": {"node": nid, "output": {"images": job["items"]}, "prompt_id": pid}})
+            send({"type": "executing", "data": {"node": None, "prompt_id": pid}})
+            send({"type": "execution_success", "data": {"prompt_id": pid}})
+        except OSError:
+            pass
+        finally:
+            job["events_done"] = True
 
     def object_info(self):
         oi = {
@@ -99,6 +176,29 @@ def make_handler(state: FakeState):
 
         def do_GET(self):
             u = urlparse(self.path)
+            if u.path == "/ws":
+                if not state.ws_enabled or self.headers.get("Upgrade", "").lower() != "websocket":
+                    return self._send(404, {"error": "no websocket"})
+                key = self.headers.get("Sec-WebSocket-Key", "")
+                accept = base64.b64encode(hashlib.sha1(key.encode() + WS_GUID).digest()).decode()
+                cid = parse_qs(u.query).get("clientId", [""])[0]
+                conn = (self.connection, threading.Lock())
+                state.ws[cid] = conn  # đăng ký trước khi trả 101 để không lỡ job gửi ngay sau đó
+                self.wfile.write((f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                                  f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode())
+                try:
+                    ws_send(conn, 1, json.dumps({"type": "status", "data": {"status": {"exec_info": {"queue_remaining": 0}},
+                                                                            "sid": cid}}).encode())
+                    while True:
+                        d = self.connection.recv(1024)
+                        if not d or (d[0] & 0x0F) == 0x8:
+                            break
+                except OSError:
+                    pass
+                finally:
+                    state.ws.pop(cid, None)
+                    self.close_connection = True
+                return None
             if u.path == "/system_stats":
                 return self._send(200, {"system": {"os": "nt", "ram_total": state.ram_gb * GB, "comfyui_version": "0.3.99",
                                                    "python_version": "3.12.7", "pytorch_version": "2.9.0+cu128"},
@@ -115,7 +215,7 @@ def make_handler(state: FakeState):
                 if job.get("interrupted"):  # ComfyUI thật: job bị dừng → status error + execution_interrupted
                     return self._send(200, {pid: {"outputs": {}, "status": {"status_str": "error", "completed": False,
                                           "messages": [["execution_interrupted", {"prompt_id": pid, "node_id": "9"}]]}}})
-                if state.never_finish or job["polls"] <= state.delay_polls:
+                if state.never_finish or job["polls"] <= state.delay_polls or not job.get("events_done", True):
                     return self._send(200, {})
                 if state.fail_exec:
                     return self._send(200, {pid: {"outputs": {}, "status": {"status_str": "error", "completed": False,
@@ -159,7 +259,12 @@ def make_handler(state: FakeState):
                                                 "node_errors": {nid: {"class_type": "LoadImage", "errors": [
                                                     {"message": "Invalid image file", "details": node["inputs"]["image"]}]}}})
                 pid = uuid.uuid4().hex
-                state.jobs[pid] = {"polls": 0, "items": state.render(wf)}
+                job = {"polls": 0, "items": state.render(wf)}
+                cid = req.get("client_id", "")
+                if cid in state.ws:
+                    job["events_done"] = False
+                    threading.Thread(target=state.emit_events, args=(cid, pid, wf, job), daemon=True).start()
+                state.jobs[pid] = job
                 return self._send(200, {"prompt_id": pid, "number": len(state.jobs), "node_errors": {}})
             if u.path == "/interrupt":
                 req = json.loads(body or b"{}")

@@ -46,7 +46,7 @@ const CHECK_LABEL = {
 const checkLabel = (c) => c.startsWith("event:") ? `Sự kiện ${c.slice(6)} lệch nhịp` : (CHECK_LABEL[c] || c);
 const gpuName = (n) => String(n || "").replace(/^cuda:\d+\s*/, "").replace(/\s*:\s*\w+$/, "");
 const fmtTime = (iso) => { try { return new Date(iso).toLocaleString("vi-VN"); } catch { return iso; } };
-const seconds = (s) => s >= 60 ? `${Math.floor(s / 60)} phút ${Math.round(s % 60)} giây` : `${Math.round(s)} giây`;
+const seconds = (s) => s >= 60 ? `${Math.floor(s / 60)} phút ${Math.round(s % 60)} giây` : (s < 1 ? "dưới 1 giây" : `${Math.round(s)} giây`);
 
 // ───────── tải dữ liệu ─────────
 async function loadStatus(refresh = false) {
@@ -327,16 +327,53 @@ function renderTray() {
   const jobs = S.jobs.filter((j) => ["queued", "running"].includes(j.status)
     || (j.status === "error" && age(j) < 10 * 60 * 1000) || (j.status !== "error" && age(j) < 60 * 1000)).slice(0, 4);
   tray.classList.toggle("has-jobs", jobs.length > 0);
-  tray.innerHTML = jobs.map((j) => {
+  const html = jobs.map((j) => {
     const icon = j.status === "running" ? `<span class="spin" aria-hidden="true"></span>` : `<span class="state-dot ${esc(j.status)}" aria-hidden="true"></span>`;
     const st = { queued: "đang chờ", running: `đang chạy, ${seconds(j.elapsed)}`, done: `xong sau ${seconds(j.elapsed)}`, error: "lỗi", cancelled: "đã dừng" }[j.status];
     const canCancel = ["queued", "running"].includes(j.status);
-    return `<div class="job">${icon}<span>${esc(j.title)}</span><span class="muted">${esc(st)}</span>
+    const live = j.status === "running" && j.progress ? liveBlock(j) : "";
+    return `<div class="job">${icon}<div class="job-main"><span class="job-title">${esc(j.title)}</span>${live}</div><span class="muted">${esc(st)}</span>
       ${canCancel ? `<button class="btn btn-quiet btn-small" data-action="cancel-job" data-job="${esc(j.id)}" type="button">Dừng</button>` : "<span></span>"}
       ${j.error ? `<span class="job-error">${esc(j.error)}</span>` : ""}
+      ${j.progress?.nodes?.length ? flowBlock(j) : ""}
       ${j.log?.length ? `<details class="adv-only" data-job-log="${esc(j.id)}" ${S.openLogs.has(j.id) ? "open" : ""}><summary>Nhật ký</summary><pre>${esc(j.log.join("\n"))}</pre></details>` : ""}
     </div>`;
   }).join("");
+  if (html !== S.trayHtml) { tray.innerHTML = html; S.trayHtml = html; }  // không vẽ lại khi không đổi → ảnh không nháy
+}
+
+// Tiến độ trực tiếp từ ComfyUI: ảnh xem trước, bước hiện tại, thanh tiến độ, thời gian còn lại.
+function liveBlock(j) {
+  const p = j.progress;
+  const parts = [];
+  if (p.variants > 1) parts.push(`Biến thể ${p.variant}/${p.variants}`);
+  let phase = parts.length ? p.phase.charAt(0).toLowerCase() + p.phase.slice(1) : p.phase;
+  if (p.steps) phase += `: bước ${p.step}/${p.steps}`;
+  parts.push(phase);
+  if (p.eta_s != null) parts.push(`còn khoảng ${seconds(p.eta_s)}`);
+  const frac = p.steps ? p.step / p.steps : (p.total_nodes ? p.done_nodes / p.total_nodes : 0);
+  const pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
+  const label = p.steps ? "Tiến độ bước sinh khung" : "Số bước của flow đã xong";
+  return `<div class="job-live">
+    ${j.has_preview ? `<img class="job-thumb" src="/api/jobs/${esc(j.id)}/preview?v=${j.preview_v}" alt="Ảnh xem trước đang sinh">` : ""}
+    <div class="job-live-text">
+      <span>${esc(parts.join(", "))}</span>
+      <span class="bar" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></span>
+    </div>
+  </div>`;
+}
+
+const NODE_STATE = { pending: "chờ", running: "đang chạy", done: "xong", cached: "dùng lại", error: "lỗi", interrupted: "đã dừng" };
+function flowBlock(j) {
+  const key = `${j.id}-flow`;
+  const p = j.progress;
+  return `<details class="adv-only flow" data-job-log="${esc(key)}" ${S.openLogs.has(key) ? "open" : ""}>
+    <summary>Các bước trong flow (${p.done_nodes}/${p.total_nodes} xong)</summary>
+    <ol class="flow-list">${p.nodes.map((n) => `<li class="fs-${esc(n.state)}">
+      <span class="fs-dot" aria-hidden="true"></span><span class="fs-label">${esc(n.label)}</span>
+      <span class="muted">${esc(n.title)} (node ${esc(n.id)})</span>
+      <span class="fs-state">${esc(NODE_STATE[n.state] || n.state)}${n.time_s != null ? `, ${esc(seconds(n.time_s))}` : ""}</span></li>`).join("")}</ol>
+  </details>`;
 }
 
 async function pollJobs() {

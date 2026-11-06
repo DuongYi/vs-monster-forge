@@ -243,3 +243,32 @@ def test_static_ui_served(env):
     assert b"X\xc6\xb0\xe1\xbb\x9fng Qu\xc3\xa1i" in html  # "Xưởng Quái"
     assert isinstance(c.call("GET", "/static/app.js"), bytes)
     c.call("GET", "/static/../core.py", expect=404)
+
+
+def test_live_progress_and_preview_during_generation(env):
+    c, app, fc, _ = env
+    fc.state.steps, fc.state.step_delay = 12, 0.08
+    c.call("POST", "/api/monsters", {"monster_id": "mob_live", "preset": "mob_thuong"})
+    c.call("POST", "/api/monsters/mob_live/ref?name=r.png", raw=png_bytes(synth.draw_monster(0.0)))
+    job = c.call("POST", "/api/monsters/mob_live/anims/idle/generate",
+                 {"template": "wan22_5b_i2v.template.json", "count": 2, "sets": {"NUM_FRAMES": "9"}})
+    seen = None
+    t0 = time.time()
+    while time.time() - t0 < 30:  # bắt được lúc đang ở bước sinh khung
+        j = next(x for x in c.call("GET", "/api/jobs?monster=mob_live") if x["id"] == job["id"])
+        p = j.get("progress") or {}
+        if j["status"] == "running" and p.get("steps") and p.get("step", 0) >= 7:
+            seen = j
+            break
+        time.sleep(0.03)
+    assert seen, "không bắt được tiến độ giữa chừng"
+    p = seen["progress"]
+    assert p["phase"] == "Sinh khung" and p["steps"] == 12 and p["variant"] == 1 and p["variants"] == 2
+    assert p["node"]["class"] == "KSampler" and p["total_nodes"] == 11
+    assert seen["has_preview"] and "_preview" not in seen
+    img = c.call("GET", f"/api/jobs/{seen['id']}/preview?v={seen['preview_v']}")
+    assert isinstance(img, bytes) and img.startswith(b"\x89PNG")
+    jobs = c.wait("mob_live")
+    final = next(x for x in jobs if x["id"] == job["id"])
+    assert final["status"] == "done" and final["progress"]["variant"] == 2 and final["progress"]["phase"] == "Xong"
+    c.call("GET", "/api/jobs/000000000000/preview", expect=400)

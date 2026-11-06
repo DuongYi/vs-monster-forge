@@ -24,18 +24,24 @@ Mã thoát: 0 = xong · 1 = lỗi đầu vào / ComfyUI / workflow · 2 = valida
 from __future__ import annotations
 
 import argparse
+import base64
 import fnmatch
 import hashlib
 import json
+import os
 import re
+import socket
+import ssl
+import struct
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib import error, parse, request
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 TEMPLATE_SCHEMA = "asset-gen.comfy-template/1"
 DEFAULT_URL = "http://127.0.0.1:8188"
 HERE = Path(__file__).resolve().parent
@@ -161,6 +167,345 @@ class Comfy:
                 self.post_json("/queue", {"delete": [prompt_id]})
         except ComfyError:
             pass
+
+
+# ───────────────────────────── WebSocket (tiến độ trực tiếp) ─────────────────────────────
+
+WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+class ComfyWS:
+    """Client WebSocket tối giản (RFC 6455, chỉ thư viện chuẩn) để nhận sự kiện tiến độ từ ComfyUI /ws."""
+
+    def __init__(self, base_url: str, client_id: str, timeout: float = 10):
+        u = parse.urlparse(base_url)
+        secure = u.scheme == "https"
+        host = u.hostname or "127.0.0.1"
+        port = u.port or (443 if secure else 80)
+        path = (u.path.rstrip("/") or "") + f"/ws?clientId={parse.quote(client_id)}"
+        sock = socket.create_connection((host, port), timeout=timeout)
+        if secure:
+            sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+        key = base64.b64encode(os.urandom(16)).decode()
+        sock.sendall((f"GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                      f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = sock.recv(4096)
+            if not chunk or len(buf) > 65536:
+                sock.close()
+                raise ComfyError("ComfyUI đóng kết nối WebSocket khi bắt tay")
+            buf += chunk
+        head, _, rest = buf.partition(b"\r\n\r\n")
+        lines = head.decode("latin-1").split("\r\n")
+        if " 101 " not in lines[0] + " ":
+            sock.close()
+            raise ComfyError(f"ComfyUI không mở WebSocket ({lines[0]})")
+        headers = {k.strip().lower(): v.strip() for k, _, v in (ln.partition(":") for ln in lines[1:])}
+        expect = base64.b64encode(hashlib.sha1(key.encode() + WS_GUID).digest()).decode()
+        if headers.get("sec-websocket-accept") != expect:
+            sock.close()
+            raise ComfyError("Bắt tay WebSocket sai khoá")
+        sock.settimeout(None)
+        self.sock, self._buf = sock, rest
+        self._send_lock = threading.Lock()
+        self.closed = False
+
+    def _recv_exact(self, n: int) -> bytes:
+        while len(self._buf) < n:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise EOFError
+            self._buf += chunk
+        out, self._buf = self._buf[:n], self._buf[n:]
+        return out
+
+    def _send(self, op: int, payload: bytes = b"") -> None:
+        mask = os.urandom(4)
+        n = len(payload)
+        head = bytes([0x80 | op])
+        if n < 126:
+            head += bytes([0x80 | n])
+        elif n < 65536:
+            head += bytes([0x80 | 126]) + struct.pack(">H", n)
+        else:
+            head += bytes([0x80 | 127]) + struct.pack(">Q", n)
+        body = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        with self._send_lock:
+            self.sock.sendall(head + mask + body)
+
+    def recv(self) -> tuple[int, bytes]:
+        """Trả (opcode, dữ liệu) của một thông điệp hoàn chỉnh: 1 = chữ (JSON), 2 = nhị phân (ảnh xem trước)."""
+        op_msg, data = None, b""
+        while True:
+            b1, b2 = self._recv_exact(2)
+            fin, op = b1 & 0x80, b1 & 0x0F
+            n = b2 & 0x7F
+            if n == 126:
+                n = struct.unpack(">H", self._recv_exact(2))[0]
+            elif n == 127:
+                n = struct.unpack(">Q", self._recv_exact(8))[0]
+            mask = self._recv_exact(4) if b2 & 0x80 else None
+            payload = self._recv_exact(n)
+            if mask:
+                payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+            if op == 0x9:          # ping → pong
+                self._send(0xA, payload)
+                continue
+            if op == 0xA:
+                continue
+            if op == 0x8:          # đóng
+                raise EOFError
+            if op in (0x1, 0x2):
+                op_msg, data = op, payload
+            elif op == 0x0:
+                data += payload
+            if fin and op_msg is not None:
+                return op_msg, data
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            self._send(0x8, b"\x03\xe8")
+        except OSError:
+            pass
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.sock.close()
+
+
+def extract_preview(data: bytes) -> tuple[bytes, str] | None:
+    """Ảnh xem trước trong thông điệp nhị phân của ComfyUI: 4 byte loại sự kiện, (4 byte định dạng /
+    metadata), rồi tới dữ liệu ảnh. Tìm chữ ký ảnh để chịu được các phiên bản đóng gói khác nhau."""
+    if len(data) < 12:
+        return None
+    window = data[4:8192]
+    for sig, mime in ((b"\xff\xd8\xff", "image/jpeg"), (b"\x89PNG\r\n\x1a\n", "image/png")):
+        i = window.find(sig)
+        if i != -1:
+            return data[4 + i:], mime
+    i = window.find(b"RIFF")
+    if i != -1 and window[i + 8:i + 12] == b"WEBP":
+        return data[4 + i:], "image/webp"
+    return None
+
+
+# Nhãn tiếng Việt cho từng loại node (theo tên lớp), để người không rành ComfyUI vẫn hiểu máy đang làm gì.
+PHASE_RULES = [
+    (re.compile(r"^LoadImage"), "Nạp ảnh chuẩn"),
+    (re.compile(r"Loader|^Load"), "Nạp mô hình"),
+    (re.compile(r"^CLIPTextEncode|TextEncode"), "Đọc mô tả động tác"),
+    (re.compile(r"ModelSampling"), "Cấu hình mô hình"),
+    (re.compile(r"Sampler"), "Sinh khung"),
+    (re.compile(r"ToVideo|Latent"), "Chuẩn bị khung"),
+    (re.compile(r"VAEDecode|Decode"), "Giải mã khung hình"),
+    (re.compile(r"^Save|VideoCombine|Preview"), "Lưu kết quả"),
+]
+
+
+def phase_label(class_type: str) -> str:
+    for rx, label in PHASE_RULES:
+        if rx.search(class_type or ""):
+            return label
+    return class_type or "?"
+
+
+class ProgressTracker:
+    """Gom sự kiện WebSocket thành trạng thái dễ hiển thị: node đang chạy, bước x/y, thời gian còn lại, từng node."""
+
+    def __init__(self, wf: dict):
+        self.nodes = {}
+        for nid in _sorted_ids(wf):
+            n = wf[nid]
+            ct = n.get("class_type", "")
+            self.nodes[str(nid)] = {"id": str(nid), "class": ct, "title": (n.get("_meta") or {}).get("title") or ct,
+                                    "label": phase_label(ct), "state": "pending", "t0": None, "time_s": None}
+        self.order: list[str] = []
+        self.current: str | None = None
+        self.step = self.steps = None
+        self.step_t0 = None
+        self.status = "queued"
+        self.queue_remaining = None
+        self.t_start = time.time()
+        self.t_exec = None
+        self.previews = 0
+        self.error = None
+        self.lock = threading.Lock()
+
+    def _touch(self, nid: str) -> dict | None:
+        n = self.nodes.get(str(nid))
+        if n is not None and n["id"] not in self.order:
+            self.order.append(n["id"])
+        return n
+
+    def _close_current(self, state: str = "done") -> None:
+        n = self.nodes.get(self.current) if self.current else None
+        if n and n["state"] == "running":
+            n["state"] = state
+            n["time_s"] = round(time.time() - n["t0"], 1) if n["t0"] else None
+        self.current = None
+        self.step = self.steps = self.step_t0 = None
+
+    def _start(self, nid: str) -> None:
+        if self.current == str(nid):
+            return
+        self._close_current()
+        n = self._touch(nid)
+        if n:
+            n["state"], n["t0"] = "running", time.time()
+            self.current = n["id"]
+        self.status = "running"
+
+    def handle(self, msg: dict) -> bool:
+        """Cập nhật theo một thông điệp JSON; trả True nếu trạng thái hiển thị đổi."""
+        t = msg.get("type")
+        d = msg.get("data") or {}
+        with self.lock:
+            if t == "status":
+                q = ((d.get("status") or {}).get("exec_info") or {}).get("queue_remaining")
+                changed = q != self.queue_remaining
+                self.queue_remaining = q
+                return changed and self.status == "queued"
+            if t == "execution_start":
+                self.status, self.t_exec = "running", time.time()
+                return True
+            if t == "execution_cached":
+                for nid in d.get("nodes") or []:
+                    n = self._touch(nid)
+                    if n:
+                        n["state"] = "cached"
+                return True
+            if t == "executing":
+                nid = d.get("node")
+                if nid is None:
+                    self._close_current()
+                    return True
+                self._start(nid)
+                return True
+            if t == "progress":
+                if d.get("node") is not None and str(d["node"]) != self.current:
+                    self._start(d["node"])
+                v, m = d.get("value"), d.get("max")
+                if isinstance(v, (int, float)) and isinstance(m, (int, float)) and m > 0:
+                    if self.step is None or v < self.step:
+                        self.step_t0 = time.time()
+                    self.step, self.steps = v, m
+                return True
+            if t == "progress_state":
+                for nid, s in (d.get("nodes") or {}).items():
+                    st = (s or {}).get("state")
+                    if st == "running":
+                        self._start(nid)
+                        v, m = s.get("value"), s.get("max")
+                        if isinstance(v, (int, float)) and isinstance(m, (int, float)) and m > 1:
+                            if self.step is None or v < self.step:
+                                self.step_t0 = time.time()
+                            self.step, self.steps = v, m
+                    elif st == "finished":
+                        n = self._touch(nid)
+                        if n and n["state"] in ("pending", "running"):
+                            if self.current == n["id"]:
+                                self._close_current()
+                            else:
+                                n["state"] = "done"
+                return True
+            if t == "executed":
+                nid = str(d.get("node"))
+                if nid == self.current:
+                    self._close_current()
+                else:
+                    n = self._touch(nid)
+                    if n and n["state"] in ("pending", "running"):
+                        n["state"] = "done"
+                return True
+            if t == "execution_success":
+                self._close_current()
+                self.status = "done"
+                return True
+            if t == "execution_error":
+                n = self._touch(d.get("node_id"))
+                if n:
+                    n["state"] = "error"
+                self.current = None
+                self.status = "error"
+                self.error = (d.get("exception_message") or "").strip() or None
+                return True
+            if t == "execution_interrupted":
+                self._close_current("interrupted")
+                self.status = "interrupted"
+                return True
+        return False
+
+    def got_preview(self) -> None:
+        with self.lock:
+            self.previews += 1
+
+    def finish(self) -> None:
+        with self.lock:
+            self._close_current()
+            for n in self.nodes.values():
+                if n["state"] == "running":
+                    n["state"] = "done"
+            if self.status not in ("error", "interrupted"):
+                self.status = "done"
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            now = time.time()
+            cur = self.nodes.get(self.current) if self.current else None
+            eta = None
+            if self.step and self.steps and self.step_t0 and self.step > 1:
+                eta = (now - self.step_t0) / (self.step - 1) * (self.steps - self.step)
+            if self.status == "queued":
+                phase = "Đang chờ ComfyUI" + (f" ({self.queue_remaining} việc trong hàng đợi)" if self.queue_remaining else "")
+            else:
+                phase = {"done": "Xong", "error": "Lỗi", "interrupted": "Đã dừng"}.get(self.status) or (
+                    cur["label"] if cur else "Đang chạy")
+            done = sum(1 for n in self.nodes.values() if n["state"] in ("done", "cached"))
+            ordered = [self.nodes[i] for i in self.order] + [n for i, n in self.nodes.items() if i not in self.order]
+            return {
+                "status": self.status, "phase": phase,
+                "node": ({"id": cur["id"], "class": cur["class"], "title": cur["title"]} if cur else None),
+                "step": self.step, "steps": self.steps, "eta_s": round(eta) if eta is not None else None,
+                "done_nodes": done, "total_nodes": len(self.nodes),
+                "elapsed_s": round(now - self.t_start, 1), "previews": self.previews, "error": self.error,
+                "nodes": [{k: n[k] for k in ("id", "class", "title", "label", "state", "time_s")} for n in ordered],
+            }
+
+
+def watch_progress(c: "Comfy", client_id: str, tracker: ProgressTracker, on_update, log=print):
+    """Mở WebSocket và đọc sự kiện ở luồng nền. Trả đối tượng ComfyWS (để đóng) hoặc None nếu không kết nối được."""
+    try:
+        ws = ComfyWS(c.url, client_id, timeout=min(10, c.timeout))
+    except (OSError, ComfyError) as e:
+        log(f"  (không theo dõi chi tiết được, vẫn chạy bình thường: {e})")
+        return None
+
+    def loop():
+        while not ws.closed:
+            try:
+                op, data = ws.recv()
+            except (EOFError, OSError, ValueError):
+                return
+            try:
+                if op == 1:
+                    msg = json.loads(data.decode("utf-8", "replace"))
+                    if isinstance(msg, dict) and tracker.handle(msg):
+                        on_update(tracker.snapshot(), None)
+                elif op == 2:
+                    prev = extract_preview(data)
+                    if prev:
+                        tracker.got_preview()
+                        on_update(tracker.snapshot(), prev)
+            except Exception:  # noqa: BLE001 – lỗi hiển thị không được làm hỏng việc sinh
+                continue
+
+    threading.Thread(target=loop, daemon=True, name="comfy-ws").start()
+    return ws
 
 
 # ───────────────────────────── object_info ─────────────────────────────
@@ -475,7 +820,9 @@ def run_template(c: Comfy, template_path: Path, sets: dict[str, str], dest: Path
                  seed_list: list[int] | None = None, input_images: list[Path] | None = None,
                  timeout: float = 3600, poll: float = 2.0, overwrite: bool = False, tag: str | None = None,
                  registry: dict | None = None, skip_validate: bool = False, allow_unlisted: bool = False,
-                 max_runs: int = 6, dry_run: bool = False, log=print) -> list[dict]:
+                 max_runs: int = 6, dry_run: bool = False, log=print, progress=None) -> list[dict]:
+    """progress(snapshot: dict, preview: (bytes, mime) | None) – gọi khi tiến độ đổi (cần ComfyUI mở WebSocket /ws).
+    snapshot có thêm 'seed', 'run' (thứ tự lượt) và 'runs' (tổng lượt)."""
     wf, meta, raw = load_template(template_path)
     name = meta.get("name") or Path(template_path).stem
     params = dict(meta.get("defaults") or {})
@@ -518,9 +865,9 @@ def run_template(c: Comfy, template_path: Path, sets: dict[str, str], dest: Path
         params["INPUT_IMAGE" if i == 1 else f"INPUT_IMAGE_{i}"] = c.upload_image(img)
         log(f"  đã tải lên {img.name}")
 
-    client_id = uuid.uuid4().hex
     results = []
-    for seed in run_seeds:
+    for run_i, seed in enumerate(run_seeds, start=1):
+        client_id = uuid.uuid4().hex  # mỗi lượt một client_id: sự kiện WebSocket chỉ thuộc về lượt này
         p = dict(params, SEED=seed, PREFIX=f"assetgen/{tag or name}_{seed}")
         filled = fill(wf, p)
         left = leftover_placeholders(filled)
@@ -537,17 +884,42 @@ def run_template(c: Comfy, template_path: Path, sets: dict[str, str], dest: Path
         log(f"▶ seed {seed} → {out_dir}")
         started = now_iso()
         t0 = time.time()
-        res = c.post_json("/prompt", {"prompt": filled, "client_id": client_id}) or {}
-        if res.get("node_errors"):
-            raise ComfyError(f"Workflow bị từ chối: {format_comfy_error(res)}")
-        pid = res.get("prompt_id")
-        if not pid:
-            raise ComfyError(f"ComfyUI không trả prompt_id: {res}")
+        tracker = ProgressTracker(filled)
+        ws = None
+        if progress is not None:
+            def emit(snap, prev, _seed=seed, _i=run_i):
+                try:
+                    progress(dict(snap, seed=_seed, run=_i, runs=len(run_seeds)), prev)
+                except Exception:  # noqa: BLE001 – lỗi hiển thị không được làm hỏng việc sinh
+                    pass
+            ws = watch_progress(c, client_id, tracker, emit, log)
+            emit(tracker.snapshot(), None)
         try:
-            entry = wait_for(c, pid, timeout, poll, log)
-        except KeyboardInterrupt:
-            c.interrupt(pid)
+            res = c.post_json("/prompt", {"prompt": filled, "client_id": client_id}) or {}
+            if res.get("node_errors"):
+                raise ComfyError(f"Workflow bị từ chối: {format_comfy_error(res)}")
+            pid = res.get("prompt_id")
+            if not pid:
+                raise ComfyError(f"ComfyUI không trả prompt_id: {res}")
+            try:
+                entry = wait_for(c, pid, timeout, poll, log)
+            except KeyboardInterrupt:
+                c.interrupt(pid)
+                raise
+            tracker.finish()
+            if progress is not None:
+                emit(tracker.snapshot(), None)
+        except ComfyError as e:
+            if progress is not None:
+                with tracker.lock:
+                    if tracker.status not in ("error", "interrupted"):
+                        tracker.status = "interrupted" if "dừng" in str(e) else "error"
+                    tracker.error = tracker.error or str(e)
+                emit(tracker.snapshot(), None)
             raise
+        finally:
+            if ws is not None:
+                ws.close()
         files = []
         for nid, key, it in output_items(entry):
             data = c.view(it)
@@ -618,6 +990,28 @@ def doctor(c: Comfy, templates_dir: Path, registry: dict) -> dict:
 
 
 # ───────────────────────────── CLI ─────────────────────────────
+
+def cli_progress(out=print):
+    """In tiến độ gọn ra console: mỗi lần đổi bước, và mỗi 25% trong bước sinh khung."""
+    last = {"key": None}
+
+    def cb(snap: dict, prev) -> None:
+        if prev is not None:
+            return
+        quarter = int(4 * snap["step"] / snap["steps"]) if snap.get("step") and snap.get("steps") else None
+        key = (snap.get("run"), snap["phase"], quarter)
+        if key == last["key"]:
+            return
+        last["key"] = key
+        line = f"    [{snap.get('run', 1)}/{snap.get('runs', 1)}] {snap['phase']}"
+        if snap.get("steps"):
+            line += f": bước {snap['step']}/{snap['steps']}"
+            if snap.get("eta_s") is not None:
+                line += f", còn khoảng {snap['eta_s']}s"
+        out(line)
+
+    return cb
+
 
 def _parse_sets(items: list[str]) -> dict[str, str]:
     out = {}
@@ -733,7 +1127,7 @@ def main(argv=None) -> int:
                 seed_list=seed_list, input_images=[Path(p) for p in args.input_image], timeout=args.timeout,
                 poll=args.poll, overwrite=args.overwrite, tag=args.tag, registry=load_registry(args.registry),
                 skip_validate=args.skip_validate, allow_unlisted=args.allow_unlisted, max_runs=args.max_runs,
-                dry_run=args.dry_run)
+                dry_run=args.dry_run, progress=None if args.dry_run else cli_progress())
             if res:
                 total = sum(r["duration_s"] for r in res)
                 print(f"Xong {len(res)} lượt, tổng {total:.0f}s GPU.")
