@@ -269,6 +269,26 @@ Quy trình đầy đủ cho Claude Code nằm trong `plugin/skills/asset-gen/SKI
 
 Kiểm thử: `pip install pytest`, rồi `python -m pytest -q app/tests plugin/skills/asset-gen/tests`.
 
+### Định dạng hoạ sĩ 16 khung (thử sinh từ một ảnh)
+Quái 58/59/60 trong game dùng **16 PNG 500×500 dáng chốt** + đạn a/b/c, không dùng atlas. Công cụ cho định dạng này nằm ở `plugin\skills\asset-gen\scripts\fbf16\`.
+
+**Việc đang chờ máy có card:** thử Qwen-Image-Edit-2511. Làm theo `plugin/skills/asset-gen/reference/fbf16-tu-1-anh.md` §4. Tài liệu có các bước chuẩn bị, ba chế độ thử, lệnh kiểm và tiêu chí đạt.
+
+Lưu ý:
+- Ảnh quái thật lấy từ repo client vào `workspace\fbf16\`. Không commit.
+- Mô hình còn `check`: hỏi người dùng trước khi tải và trước khi đổi sang `ok`.
+
+```
+:: dựng thư mục làm việc từ bộ hoạ sĩ
+python plugin\skills\asset-gen\scripts\fbf16\chuan_bi.py --ma u_minh_ho_phap --goc "<FE>\Monster\58 U Minh Ho Phap\1.png" --dang "<FE>\Monster\60 Vu Ho Phap" --thay 5="<FE>\Monster\59 Xich Ho Phap" --dap-an "<FE>\Monster\58 U Minh Ho Phap"
+
+:: sinh (chưa chạy thử), rồi canh cỡ và kiểm
+python plugin\skills\asset-gen\scripts\fbf16\gen_qwen.py u_minh_ho_phap --che-do chu
+python plugin\skills\asset-gen\scripts\fbf16\ai_to_fbf16.py workspace\fbf16\u_minh_ho_phap\ai\chu workspace\fbf16\u_minh_ho_phap\ai\chu-500 --seed 1 --goc workspace\fbf16\u_minh_ho_phap\goc.png --chi-tiet 368,240,427,332 --mau 0.6
+python plugin\skills\asset-gen\scripts\fbf16\qa16.py workspace\fbf16\u_minh_ho_phap\ai\chu-500 --ref workspace\fbf16\u_minh_ho_phap\goc.png
+python plugin\skills\asset-gen\scripts\fbf16\kiem_chu_ky_di.py workspace\fbf16\u_minh_ho_phap\ai\chu-500
+```
+
 ---
 
 ## 8. Phiếu ghi lần chạy đầu

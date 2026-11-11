@@ -1,6 +1,6 @@
 {
   "_doc": "Sổ đăng ký mô hình và workflow cho quái FBF, chạy ComfyUI CỤC BỘ (không Cloud). license_status: ok | check (cần đọc model card) | avoid. 'files' là mẫu tên file (glob, không phân biệt hoa thường): comfy_local.py validate chặn mọi file mô hình không khớp mục 'ok'. Workflow status: planned | untested (có file mẫu, chưa chạy thử) | tested.",
-  "updated": "2026-11-06",
+  "updated": "2026-11-10",
   "budget": {
     "max_runs_per_call": 6,
     "max_runs_per_animation": 3,
@@ -24,10 +24,17 @@
      "license_status": "check", "files": ["wan*vace*.safetensors"],
      "note": "Cho workflow repaint từ video render Spine."},
     {"id": "qwen-image", "kind": "text-to-image", "license": "Apache-2.0", "license_status": "check", "files": ["qwen_image_*.safetensors"]},
-    {"id": "qwen-image-edit", "kind": "image-edit", "license": "Apache-2.0", "license_status": "check", "files": ["qwen_image_edit*.safetensors"]},
+    {"id": "qwen-image-edit", "kind": "image-edit", "license": "Apache-2.0", "license_status": "check", "files": ["qwen_image_edit*.safetensors"],
+     "source": "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
+     "note": "Ứng viên số 1 cho định dạng hoạ sĩ 16 khung (bản 2511: đa ảnh, nhận ảnh khung xương làm dáng, giữ nhân vật tốt). Chưa thử. Cần ~24 GB (fp8). Xem reference/fbf16-tu-1-anh.md."},
     {"id": "z-image-turbo", "kind": "text-to-image", "license": "Apache-2.0", "license_status": "check", "files": ["z_image_turbo*.safetensors"]},
-    {"id": "flux2-klein-4b", "kind": "text-to-image", "license": "Apache-2.0", "license_status": "check", "files": ["flux*2*klein*4b*.safetensors"]},
+    {"id": "flux2-klein-4b", "kind": "text-to-image / image-edit", "license": "Apache-2.0", "license_status": "check", "files": ["flux*2*klein*4b*.safetensors"],
+     "source": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
+     "note": "Đã thử 10/11/2026 trên Mac (mflux 4-bit) cho định dạng 16 khung: bỏ qua ảnh dáng mẫu, chu kỳ đi đứng im, chi tiết trôi. Người dùng chốt không đạt."},
     {"id": "birefnet", "kind": "background-removal", "license": "MIT (theo nhà phát hành)", "license_status": "check", "files": ["birefnet*"]},
+    {"id": "dwpose", "kind": "pose-estimation (khung xương)", "license": "Apache-2.0 (theo nhà phát hành)", "license_status": "check",
+     "files": ["dw-ll_ucoco_384*", "yolox_l*"],
+     "note": "Trích khung xương từ dáng mẫu hoạ sĩ cho định dạng 16 khung (node comfyui_controlnet_aux). Kiểm giấy phép từng file trước khi đổi sang ok."},
     {"id": "kandinsky-6-video", "kind": "image-to-video", "license": "MIT", "license_status": "check",
      "source": "https://www.scriptbyai.com/best-open-ai-video-generation-models/", "files": ["kandinsky*6*"]},
     {"id": "longcat-video", "kind": "image-to-video", "license": "MIT", "license_status": "check",
@@ -77,6 +84,13 @@
       "status": "planned",
       "purpose": "Vẽ lại anim Spine cũ chi tiết hơn, giữ đúng nhịp.",
       "approach": "Video render Spine làm điều khiển (VACE) + ảnh gốc + LoRA.",
+      "file": null
+    },
+    {
+      "id": "fbf16_qwen_edit",
+      "status": "planned",
+      "purpose": "Định dạng hoạ sĩ 16 khung: ảnh gốc + dáng mẫu/khung xương → từng khung 2–16.",
+      "approach": "Qwen-Image-Edit-2511 sửa ảnh đa tham chiếu. Thử 3 chế độ chu/dang/xuong theo reference/fbf16-tu-1-anh.md §4; tạm chạy bằng scripts/fbf16/gen_qwen.py (diffusers, chưa chạy thử).",
       "file": null
     }
   ]

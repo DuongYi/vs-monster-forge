@@ -1,0 +1,30 @@
+{
+  "_doc": "Mô tả 15 dáng (khung 2-16) của định dạng hoạ sĩ 16 khung, khuôn chibi người đứng (bộ 58/59/60). Dùng cho scripts/fbf16/gen_qwen.py. {VU_KHI} và {MAU} lấy từ mo_ta.json của từng quái. Câu chữ đã chạy được với FLUX.2 klein 4B ngày 10/11/2026: ra đúng ý dáng, nhưng các khung đi gần giống nhau – xem reference/fbf16-tu-1-anh.md.",
+  "giu_nhan_vat": "Same character as in the image: {MO_TA}, same painted chibi game art style, same colors and lighting as the image. Change only the pose as described. Keep the same character size and framing as the original image, feet at the bottom. Side view facing right, full body inside the frame, plain pure white background, no shadow, no text.",
+  "giu_nhan_vat_2_anh": "Keep everything from Picture 1: {MO_TA}, the same line art, colors and painted chibi style. Picture 2 is only a pose reference: do not copy its weapon, hat, colors or face. Same character size and framing as Picture 1, full body, side view facing right, feet on the ground at the bottom, plain pure white background, no shadow, no text.",
+  "mo_dau_dang": "Redraw the character from Picture 1 in exactly the pose of the character in Picture 2.",
+  "mo_dau_xuong": "Redraw the character from Picture 1 so that its body follows the pose skeleton in Picture 2.",
+  "dang": {
+    "2": "Pose: idle breathing, exactly the same standing pose as the image, shoulders and body very slightly lower, robe or cloth swaying slightly.",
+    "3": "Pose: walking to the right, front leg stepping forward with heel touching the ground, back leg behind pushing off, {VU_KHI} swinging slightly forward.",
+    "4": "Pose: walking to the right, front foot flat on the ground, back foot lifting its heel, legs apart mid stride.",
+    "5": "Pose: walking to the right, passing position, legs close together, one knee raised a little, body slightly higher.",
+    "6": "Pose: walking to the right, the other leg now stepping forward with heel touching the ground, back leg behind.",
+    "7": "Pose: walking to the right, front foot flat, back heel lifting, legs apart mid stride.",
+    "8": "Pose: walking to the right, passing position, legs together, body slightly higher.",
+    "9": "Pose: melee attack wind-up, both hands raising the {VU_KHI} high above the head, body leaning back.",
+    "10": "Pose: melee attack swing, {VU_KHI} swung forward and down diagonally, body lunging forward, a bright {MAU} crescent slash trail following the weapon.",
+    "11": "Pose: melee attack follow-through, {VU_KHI} swept low in front near the ground, a large bright {MAU} crescent slash arc in front of the character.",
+    "12": "Pose: casting a spell, free hand at the chest holding a small glowing {MAU} orb, {VU_KHI} held upright in the other hand.",
+    "13": "Pose: casting a spell, free arm pushing forward, {MAU} magic glow at the palm, {VU_KHI} held upright.",
+    "14": "Pose: casting a spell, free arm fully extended forward with open palm, {VU_KHI} held upright.",
+    "15": "Pose: collapsing, dropped down on one knee, upper body bent forward, head bowed low, one hand on the ground, {VU_KHI} tilted and leaning on the ground.",
+    "16": "Pose: dead, lying flat horizontally on the ground on the stomach, whole body horizontal near the bottom of the image, the {VU_KHI} lying on the ground next to the body. No floating effects."
+  },
+  "mo_ta_mau": {
+    "_doc": "Mẫu mo_ta.json cho một quái (chuan_bi.py chép ra workspace/fbf16/<mã>/mo_ta.json để điền). Liệt kê đủ chi tiết phải giữ: mũ, mặt, giáp, áo, vũ khí, phụ kiện, hiệu ứng bay quanh, màu chủ đạo. Viết tiếng Anh.",
+    "MO_TA": "same design, same horned helmet, glowing eyes, armored shoulders, long red cape, spear with a blue ribbon, same small floating sparks around the body",
+    "VU_KHI": "spear",
+    "MAU": "blue"
+  }
+}
