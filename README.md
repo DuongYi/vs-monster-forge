@@ -74,6 +74,7 @@ app/
 ├── static/                     giao diện (HTML/CSS/JS thuần)
 └── tests/test_app.py           test đầu-cuối qua HTTP với ComfyUI giả lập
 plugin/skills/asset-gen/        skill + script + mẫu workflow + registry giấy phép + test
+  ├── scripts/fbf16/, config/fbf16/   định dạng hoạ sĩ 16 khung (sinh từ 1 ảnh, QA riêng, đạn đổi màu)
 ```
 
 ## Kiểm thử
@@ -81,7 +82,7 @@ plugin/skills/asset-gen/        skill + script + mẫu workflow + registry giấ
 pip install pytest
 python -m pytest -q app/tests plugin/skills/asset-gen/tests
 ```
-Kết quả hiện tại: 60 test đạt. Toàn bộ chạy trên dữ liệu và ComfyUI giả lập; bản giả lập phát cả sự kiện WebSocket giống ComfyUI thật.
+Kết quả hiện tại: 66 test đạt. Toàn bộ chạy trên dữ liệu và ComfyUI giả lập; bản giả lập phát cả sự kiện WebSocket giống ComfyUI thật.
 
 ## Chưa làm
 | Hạng mục | Cần gì |
@@ -92,3 +93,4 @@ Kết quả hiện tại: 60 test đạt. Toàn bộ chạy trên dữ liệu v�
 | Nộp draft vào game từ nút "Duyệt" | Xem `slice_sprites.py`, `validate_payload.py` |
 | Phần phát animation FBF trong Unity | Đọc repo client |
 | Ngưỡng QA | Hiệu chỉnh trên quái thật trong pilot |
+| Sinh định dạng hoạ sĩ 16 khung từ một ảnh | FLUX.2 klein 4B đã thử, không đạt. Thử Qwen-Image-Edit-2511 trên máy card ≥ 24 GB theo `plugin/skills/asset-gen/reference/fbf16-tu-1-anh.md` |

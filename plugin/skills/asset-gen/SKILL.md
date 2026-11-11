@@ -25,6 +25,7 @@ Quy tắc không đổi: AI chỉ đọc dữ liệu và nộp **draft**. Ngư�
 | `workflows/registry.json` | Mô hình được phép (theo tên file) + trạng thái workflow |
 | `workflows/*.template.json` | Mẫu workflow đã cố định |
 | `reference/` | Mô tả spec/manifest; kế hoạch chuyển đổi Spine → FBF |
+| `scripts/fbf16/`, `config/fbf16/` | Định dạng hoạ sĩ 16 khung (500×500, dáng chốt): dựng thư mục, sinh bằng sửa ảnh, canh cỡ, QA riêng, kiểm chu kỳ đi, đổi màu đạn. Xem `reference/fbf16-tu-1-anh.md` |
 
 Mọi lệnh chạy từ thư mục skill (`plugin/skills/asset-gen`). ComfyUI mặc định ở `http://127.0.0.1:8188`; đổi bằng `--url`.
 
@@ -112,6 +113,15 @@ Chỉ làm sau khi người dùng duyệt. Luồng hiện có: `slice_sprites.py
 - `sourceRef` = đường dẫn manifest + sha256 atlas.
 - `rationale` = mẫu, mô hình, LoRA, seed (lấy từ `provenance` trong manifest).
 - **Manifest `dpvs.fbf/1` chưa được ánh xạ sang schema `sprite`.** Chưa có adapter thì dừng ở bước 6 và báo rõ; không tự đoán schema.
+
+## Định dạng hoạ sĩ 16 khung (sinh từ một ảnh)
+Quái 58/59/60 trong game đang dùng **16 PNG 500×500 dáng chốt** + đạn `a/b/c`, không dùng atlas. Muốn sinh bộ này từ một ảnh, đọc `reference/fbf16-tu-1-anh.md` trước. Tóm tắt:
+- **Không lấy khung từ video.** Dùng mô hình sửa ảnh, mỗi lần một dáng; dáng mượn từ bộ hoạ sĩ cùng khuôn.
+- **Không dùng `config/qa_thresholds.json`**, vì nó coi bản hoạ sĩ là lỗi. Dùng `scripts/fbf16/qa16.py` + `kiem_chu_ky_di.py`.
+- **Đạn a/b/c không cần AI:** `scripts/fbf16/recolor_fx.py`.
+- **AI đổi cỡ theo dáng:** luôn qua `scripts/fbf16/ai_to_fbf16.py`.
+- **Đã thử FLUX.2 klein 4B (10/11/2026): không đạt.** Ứng viên kế tiếp là Qwen-Image-Edit-2511 trên máy NVIDIA, `gen_qwen.py`, chưa chạy thử. Mô hình còn `check`: phải được người dùng duyệt trước khi dùng.
+- **Ảnh quái thật chỉ nằm trong `workspace/fbf16/`.** Không commit, vì repo công khai.
 
 ## Dựng mẫu workflow mới
 Xem `workflows/README.md`. Tóm tắt: mở template trong giao diện ComfyUI → chạy được bằng tay → Export (API) → `templatize` → `validate` → chạy thử + `postprocess` → đổi `status` thành `tested` trong mẫu và registry.
